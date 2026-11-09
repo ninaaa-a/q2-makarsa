@@ -2,7 +2,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from networkx import Graph, read_graphml
+from networkx import Graph, read_graphml, relabel_nodes #relabel_nodes added
 import biom
 import qiime2 as q2
 import numpy as np
@@ -144,6 +144,15 @@ def spiec_easi(
             )
 
         graph = read_graphml(str(network_file))
+        #following lines 148-155 were added to relabel nodes in the graph to match the original feature IDs
+        feature_ids = {node: attrs["Feature"]
+               for node, attrs in graph.nodes(data=True)}
+        if len(set(feature_ids.values())) != len(feature_ids):
+             raise ValueError(
+           "SpiecEasi returned duplicate Feature attributes. Feature IDs "
+            "must be unique across input tables and encoded metadata "
+            "to use them as network node IDs.")
+        graph = relabel_nodes(graph, feature_ids)
         if metadata:
             for node in graph.nodes:
                 graph.nodes[node]["mv"] = \
