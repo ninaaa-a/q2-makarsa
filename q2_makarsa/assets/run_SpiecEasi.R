@@ -134,8 +134,13 @@ se.out <- spiec.easi(
     ncores = ncores
   )
 )
-
-features <- list(Feature = unlist(lapply(data, colnames)))
+#deleted below line, added lines 139 - 143 to prevent loosing of node Feature ID
+#features <- list(Feature = unlist(lapply(data, colnames))) 
+feature_names <- unlist(lapply(data, colnames))
+features <- list(
+  name = as.character(feature_names),
+  Feature = as.character(feature_names)
+)
 
 if (method == "mb") {
   bm <- symBeta(getOptBeta(se.out), mode = "maxabs")
@@ -156,5 +161,9 @@ if (method == "mb") {
   print("Weighted graph only available for mb and glasso method")
   network <- adj2igraph(getRefit(se.out), vertex.attr = features)
 }
+
+#added line 166 & 167 to prevent loosing of node Feature ID
+V(network)$name <- features$name
+V(network)$Feature <- features$Feature
 
 write_graph(network, out.file, "graphml")
