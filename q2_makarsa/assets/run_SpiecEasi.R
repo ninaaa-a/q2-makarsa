@@ -23,8 +23,7 @@ option_list <- list(
   ),
   make_option(c("-l", "--lambda-min-ratio"),
     action = "store", default = NULL, type = "numeric",
-    help = "the scaling factor that determines the minimum sparsity/lambda
-    parameter"
+    help = "the scaling factor that determines the minimum sparsity/lambda parameter"
   ),
   make_option(c("-d", "--nlambda"),
     action = "store", default = NULL, type = "numeric",
@@ -52,8 +51,7 @@ option_list <- list(
   ),
   make_option("--sel-criterion",
     action = "store", default = "stars", type = "character",
-    help = " Specifying criterion/method for model selection, Accepts 'stars'
-	[default], 'bstars' (Bounded StARS)"
+    help = "Specifying criterion/method for model selection, Accepts 'stars' [default], 'bstars' (Bounded StARS)"
   ),
   make_option(c("-v", "--verbose"),
     action = "store_true", default = FALSE,
@@ -61,8 +59,7 @@ option_list <- list(
   ),
   make_option("--not-lambda-log",
     action = "store_true", default = FALSE,
-    help = "lambda-log should values of lambda be distributed logarithmically
-	(TRUE) or linearly (FALSE) between lamba-min and lambda-max "
+    help = "lambda-log should values of lambda be distributed logarithmically (TRUE) or linearly (FALSE) between lamba-min and lambda-max"
   ),
   make_option("--not-pulsar-select",
     action = "store_true", default = FALSE,
@@ -80,7 +77,6 @@ option_list <- list(
 
 opt <- parse_args(OptionParser(option_list = option_list))
 
-
 # assign each of the arguments to an appropriately named R variable
 inp.file <- opt$`input-file`
 out.file <- opt$`output-file`
@@ -95,26 +91,55 @@ seed <- opt$seed
 sel.criterion <- opt$`sel-criterion`
 verbose <- opt$verbose
 lambda.log <- !(opt$`not-lambda-log`)
-lambda.min <- opt$lambda_min
-lambda.max <- opt$lambda_max
+lambda.min <- opt$`lambda-min`
+lambda.max <- opt$`lambda-max`
 pulsar.select <- !(opt$`not-pulsar-select`)
 
-### VALIDATE ARGUMENTS ###
+### VALIDATE ARGUMENTS & LOAD DATA ###
 
-data <- lapply(strsplit(inp.file, ", ")[[1]], function(x) {
-  t(as.matrix(biom_data(read_biom(x))))
+if (is.null(inp.file)) {
+  errQuit("Input file path (--input-file) is required.")
+}
+
+if (is.null(out.file)) {
+  errQuit("Output file path (--output-file) is required.")
+}
+
+# 1. Parse comma-separated input strings and read raw BIOM objects
+biom_files <- strsplit(inp.file, ", ")[[1]]
+raw_bioms <- lapply(biom_files, read_biom)
+
+# 2. Extract feature matrices transposed for SpiecEasi (samples as rows, features as columns)
+data <- lapply(raw_bioms, function(b) {
+  t(as.matrix(biom_data(b)))
 })
 
-# Output files are to be filenames (not directories) and are to be
-# removed and replaced if already present.
+# 3. Extract Feature IDs directly from the BIOM objects before matrix conversion
+feature_ids <- unlist(lapply(raw_bioms, function(b) {
+  ids <- rownames(biom_data(b))
+  if (is.null(ids)) {
+    ids <- tryCatch(biomformat::observation_ids(b), error = function(e) NULL)
+  }
+  return(ids)
+}))
 
+# Fallbacks if IDs could not be extracted directly from the BIOM object
+total_features <- sum(sapply(data, ncol))
+if (is.null(feature_ids) || length(feature_ids) != total_features) {
+  feature_ids <- unlist(lapply(data, colnames))
+}
+if (is.null(feature_ids) || length(feature_ids) != total_features) {
+  feature_ids <- paste0("Feature_", seq_len(total_features))
+}
+
+# Validate output path
 if (dir.exists(out.file)) {
-  errQuit("Output filename ", out.file, " is a directory.")
+  errQuit(paste0("Output filename ", out.file, " is a directory."))
 } else if (file.exists(out.file)) {
   invisible(file.remove(out.file))
 }
 
-### LOAD LIBRARIES ###
+### LOAD LIBRARIES & RUN SPIECEASI ###
 
 suppressWarnings(library(SpiecEasi))
 suppressWarnings(library(igraph))
@@ -134,36 +159,29 @@ se.out <- spiec.easi(
     ncores = ncores
   )
 )
-#changed below lines
-# Extract feature names from input matrices
-feature_names <- unlist(lapply(data, colnames))
 
-# Fallback in case the input BIOM lacks feature names
-if (is.null(feature_names)) {
-  feature_names <- paste0("Feature_", seq_len(sum(sapply(data, ncol))))
-}
-
-# Pass BOTH 'Feature' (for q2-makarsa validation) and 'name' (for igraph display)
-features <- list(Feature = feature_names, name = feature_names)
+### BUILD GRAPH & ATTACH ATTRIBUTES ###
 
 if (method == "mb") {
   bm <- symBeta(getOptBeta(se.out), mode = "maxabs")
   diag(bm) <- 0
   weights <- Matrix::summary(t(bm))[, 3]
   network <- adj2igraph(Matrix::drop0(getRefit(se.out)),
-    edge.attr = list(weight = weights),
-    vertex.attr = features
+    edge.attr = list(weight = weights)
   )
 } else if (method == "glasso") {
   secor <- cov2cor(getOptCov(se.out))
   bm <- summary(triu(secor * getRefit(se.out), k = 1))
   network <- adj2igraph(getRefit(se.out),
-    edge.attr = list(weight = bm[, 3]),
-    vertex.attr = features
+    edge.attr = list(weight = bm[, 3])
   )
 } else {
-  print("Weighted graph only available for mb and glasso method")
-  network <- adj2igraph(getRefit(se.out), vertex.attr = features)
+  message("Weighted graph only available for mb and glasso method")
+  network <- adj2igraph(getRefit(se.out))
 }
+
+# Attach 'Feature' attribute required by q2-makarsa and 'name' attribute for igraph display
+V(network)$Feature <- feature_ids
+V(network)$name    <- feature_ids
 
 write_graph(network, out.file, "graphml")
