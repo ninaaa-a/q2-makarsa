@@ -154,6 +154,30 @@ qiime makarsa spiec-easi \
     --o-network sponge-net.qza
 ```
 
+##### Feature ID preservation
+
+The SpiecEasi wrapper preserves the original BIOM observation IDs in the
+network's `Feature`, `name`, and `label` node attributes. The Python wrapper
+uses the explicit `Feature` attribute rather than GraphML's generated node
+names (`n0`, `n1`, etc.), so feature metadata can be joined back to the
+network after inference. Feature IDs must be unique across all input tables
+and any encoded metadata columns.
+
+After changing or installing the plugin locally, verify the installed command
+and inspect the resulting network:
+
+```bash
+qiime makarsa spiec-easi \
+  --i-table sponge-feature-table.qza \
+  --o-network sponge-net.qza
+
+qiime tools export \
+  --input-path sponge-net.qza \
+  --output-path sponge-net-exported
+
+grep -n "Feature" sponge-net-exported/network.graphml
+```
+
 From the ```sponge-net.qza``` network artefact a visualisation can be created
 and then viewed
 

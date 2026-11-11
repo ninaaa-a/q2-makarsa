@@ -72,8 +72,10 @@ def spiec_easi(
     with tempfile.TemporaryDirectory() as temp_dir_name:
         temp_dir = Path(temp_dir_name)
         table_files = []
-        
-        # 1. Collect true observation/feature IDs from input BIOM tables in Python
+
+        # Keep the IDs available for validation and metadata bookkeeping. The
+        # actual node-name mapping is done from the explicit Feature attribute
+        # emitted by R below, never from GraphML's generated node IDs.
         tables = table if isinstance(table, (list, tuple)) else [table]
         feature_id_list = []
         sample_ids = None
@@ -92,6 +94,11 @@ def spiec_easi(
                 obs_ids = list(one_table.ids(axis='observation'))
                 metadata_columns.extend(obs_ids)
                 feature_id_list.extend(obs_ids)
+
+        if len(set(feature_id_list)) != len(feature_id_list):
+            raise ValueError(
+                "Feature IDs must be unique across input tables and metadata."
+            )
 
         table_files_str = ', '.join(table_files)
         network_file = temp_dir / "network.mtx"
@@ -114,7 +121,7 @@ def spiec_easi(
         if not lambda_log:
             cmd.append("--not-lambda-log")
         if not pulsar_select:
-            cmd.append("--not-pulsar_select")
+            cmd.append("--not-pulsar-select")
         if seed is not None:
             cmd.extend(["--seed", str(seed)])
         if not lambda_log:
@@ -134,33 +141,36 @@ def spiec_easi(
 
         graph = read_graphml(str(network_file))
 
-        # 2. Map R 1-based node numbers ('19', '72'...) back to true feature IDs
+        # R/igraph may serialize node keys as n0, n1, or another internal
+        # value. Those keys do not identify biological features, so use the
+        # Feature attribute that was copied from the BIOM observation IDs.
         node_mapping = {}
-        for node in graph.nodes:
-            node_str = str(node)
-            if node_str.isdigit():
-                idx = int(node_str) - 1  # 1-based index from R -> 0-based Python index
-            elif node_str.startswith('n') and node_str[1:].isdigit():
-                idx = int(node_str[1:])
-            else:
-                idx = None
+        for node, attributes in graph.nodes(data=True):
+            feature_id = attributes.get("Feature")
+            if feature_id is None:
+                raise ValueError(
+                    f"SpiecEasi output node {node!r} has no Feature attribute."
+                )
+            node_mapping[node] = str(feature_id)
 
-            if idx is not None and 0 <= idx < len(feature_id_list):
-                node_mapping[node] = feature_id_list[idx]
-            else:
-                node_mapping[node] = graph.nodes[node].get("Feature", node)
+        unexpected_ids = set(node_mapping.values()) - set(feature_id_list)
+        if unexpected_ids:
+            raise ValueError(
+                "SpiecEasi returned Feature IDs that were not present in the "
+                f"input tables: {sorted(unexpected_ids)}"
+            )
 
         if len(set(node_mapping.values())) != len(node_mapping):
             raise ValueError(
-                "SpiecEasi returned duplicate Feature attributes. Feature IDs "
-                "must be unique across input tables and encoded metadata "
-                "to use them as network node IDs."
+                "SpiecEasi returned duplicate Feature attributes."
             )
 
-        # Relabel NetworkX graph keys
+        # Replace opaque GraphML node keys with the original feature IDs so
+        # downstream network operations and metadata joins use stable names.
         graph = relabel_nodes(graph, node_mapping)
 
-        # 3. Synchronize attributes ('Feature', 'name', 'label') for visualizer
+        # Keep all visualizer-facing identifiers synchronized with the
+        # relabeled NetworkX node key.
         for node_id in graph.nodes:
             graph.nodes[node_id]["Feature"] = str(node_id)
             graph.nodes[node_id]["name"] = str(node_id)

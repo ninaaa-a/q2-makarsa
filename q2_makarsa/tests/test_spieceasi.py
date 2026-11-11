@@ -16,6 +16,12 @@ class TestSpieceasi(TestPluginBase):
         observed = spiec_easi([table], rep_num=5)
         expected = read_graphml(self.get_data_path("network.graphml"))
         self.assertTrue(iso.is_isomorphic(observed, expected))
+        observed_ids = {
+            attrs["Feature"] for _, attrs in observed.nodes(data=True)
+        }
+        expected_ids = set(table.ids(axis="observation"))
+        self.assertEqual(observed_ids, expected_ids)
+        self.assertEqual(set(observed.nodes), expected_ids)
 
     def test_cross_domain(self):
         hmp216S = biom.load_table(self.get_data_path("hmp216S.biom"))
@@ -23,6 +29,15 @@ class TestSpieceasi(TestPluginBase):
         observed = spiec_easi([hmp216S, hmp2prot], rep_num=5)
         expected = read_graphml(self.get_data_path("network-cd.graphml"))
         self.assertTrue(iso.is_isomorphic(observed, expected))
+        observed_ids = {
+            attrs["Feature"] for _, attrs in observed.nodes(data=True)
+        }
+        expected_ids = (
+            set(hmp216S.ids(axis="observation"))
+            | set(hmp2prot.ids(axis="observation"))
+        )
+        self.assertEqual(observed_ids, expected_ids)
+        self.assertEqual(set(observed.nodes), expected_ids)
 
     def test_encode_metadata(self):
         sample_ids = list("ABCD")

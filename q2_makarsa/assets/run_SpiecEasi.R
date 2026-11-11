@@ -98,7 +98,15 @@ pulsar.select <- !(opt$`not-pulsar-select`)
 
 raw_bioms <- lapply(strsplit(inp.file, ", ")[[1]], read_biom)
 data <- lapply(raw_bioms, function(x) {
-  t(as.matrix(biom_data(x)))
+  biom_matrix <- as.matrix(biom_data(x))
+  feature_ids <- rownames(biom_matrix)
+
+  # Transposition changes features from rows to columns. Reassigning the
+  # column names explicitly prevents R/SpiecEasi from replacing the original
+  # BIOM observation IDs with positional names.
+  result <- t(biom_matrix)
+  colnames(result) <- feature_ids
+  result
 })
 
 if (dir.exists(out.file)) {
@@ -128,9 +136,14 @@ se.out <- spiec.easi(
   )
 )
 
-feature_names <- unlist(lapply(data, colnames))
-if (is.null(feature_names)) {
-  feature_names <- unlist(lapply(raw_bioms, function(x) rownames(biom_data(x))))
+# These are the original BIOM observation IDs, in the same order as the
+# columns supplied to SpiecEasi. They are the source of truth for graph nodes.
+feature_names <- unlist(lapply(data, colnames), use.names = FALSE)
+if (length(feature_names) == 0 || any(is.na(feature_names))) {
+  stop("Could not recover feature IDs from the input BIOM tables.")
+}
+if (anyDuplicated(feature_names)) {
+  stop("Feature IDs must be unique across all input BIOM tables.")
 }
 
 features <- list(
@@ -157,7 +170,9 @@ if (method == "mb") {
   network <- adj2igraph(getRefit(se.out), vertex.attr = features)
 }
 
-V(network)$name <- features$name
-V(network)$Feature <- features$Feature
+# igraph may use internal node IDs when writing GraphML. Store the original
+# IDs as explicit attributes; Python uses Feature rather than those internals.
+V(network)$name <- as.character(feature_names)
+V(network)$Feature <- as.character(feature_names)
 
 write_graph(network, out.file, "graphml")
