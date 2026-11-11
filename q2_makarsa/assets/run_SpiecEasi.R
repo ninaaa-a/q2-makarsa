@@ -105,8 +105,9 @@ pulsar.select <- !(opt$`not-pulsar-select`)
 #data <- lapply(strsplit(inp.file, ", ")[[1]], function(x) {
 #  t(as.matrix(biom_data(read_biom(x))))
 #})
-data <- lapply(strsplit(inp.file, ", ")[[1]], function(x) {
-  t(as.matrix(biom_data(read_biom(x))))
+raw_bioms <- lapply(strsplit(inp.file, ", ")[[1]], read_biom)
+data <- lapply(raw_bioms, function(x) {
+  t(as.matrix(biom_data(x)))
 })
 
 # Output files are to be filenames (not directories) and are to be

@@ -87,17 +87,22 @@ def spiec_easi(
         #    sample_ids = one_table.ids(axis='sample')
         # Collect original feature IDs directly from input BIOM table
         feature_id_list = []
+        sample_ids = None
         for i, one_table in enumerate(table):
             table_files.append(write_table(i, temp_dir, one_table))
             sample_ids = one_table.ids(axis='sample')
             feature_id_list.extend(list(one_table.ids(axis='observation')))
-        if metadata:
+        
+        metadata_columns = []
+        if metadata and sample_ids is not None:
             metadata_tables = encode_metadata(
                 sample_ids, metadata, metadata_column)
-            metadata_columns = []
-            for i, one_table in enumerate(metadata_tables, i + 1):
+            for i, one_table in enumerate(metadata_tables, len(tables)):
                 table_files.append(write_table(i, temp_dir, one_table))
-                metadata_columns.extend(one_table.ids(axis='observation'))
+                obs_ids = list(one_table.ids(axis='observation'))
+                metadata_columns.extend(obs_ids)
+                feature_id_list.extend(obs_ids)
+
         table_files = ', '.join(table_files)
         network_file = temp_dir / "network.mtx"
 
@@ -175,12 +180,13 @@ def spiec_easi(
 
         graph = relabel_nodes(graph, node_mapping)
 
-        # Synchronize internal node attributes for QIIME 2 visualizer
+        # Synchronize attributes ('Feature', 'name', 'label') for visualizer
         for node_id in graph.nodes:
             graph.nodes[node_id]["Feature"] = str(node_id)
+            graph.nodes[node_id]["name"] = str(node_id)
             graph.nodes[node_id]["label"] = str(node_id)
+
         if metadata:
             for node in graph.nodes:
-                graph.nodes[node]["mv"] = \
-                    graph.nodes[node]["Feature"] in metadata_columns
+                graph.nodes[node]["mv"] = node in metadata_columns
         return graph
