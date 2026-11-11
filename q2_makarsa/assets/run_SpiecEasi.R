@@ -101,6 +101,10 @@ pulsar.select <- !(opt$`not-pulsar-select`)
 
 ### VALIDATE ARGUMENTS ###
 
+#replaced below lines 105 - 107 with lines 108 - 110 to prevent loosing of node Feature ID
+#data <- lapply(strsplit(inp.file, ", ")[[1]], function(x) {
+#  t(as.matrix(biom_data(read_biom(x))))
+#})
 data <- lapply(strsplit(inp.file, ", ")[[1]], function(x) {
   t(as.matrix(biom_data(read_biom(x))))
 })
@@ -134,9 +138,12 @@ se.out <- spiec.easi(
     ncores = ncores
   )
 )
-#deleted below line, added lines 139 - 143 to prevent loosing of node Feature ID
+#deleted below line, added lines 143 - 150 to prevent loosing of node Feature ID
 #features <- list(Feature = unlist(lapply(data, colnames))) 
 feature_names <- unlist(lapply(data, colnames))
+if (is.null(feature_names)) {
+  feature_names <- unlist(lapply(raw_bioms, function(x) rownames(biom_data(x))))
+}
 features <- list(
   name = as.character(feature_names),
   Feature = as.character(feature_names)

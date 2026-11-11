@@ -82,9 +82,15 @@ def spiec_easi(
     with tempfile.TemporaryDirectory() as temp_dir_name:
         temp_dir = Path(temp_dir_name)
         table_files = []
+        #for i, one_table in enumerate(table):
+        #    table_files.append(write_table(i, temp_dir, one_table))
+        #    sample_ids = one_table.ids(axis='sample')
+        # Collect original feature IDs directly from input BIOM table
+        feature_id_list = []
         for i, one_table in enumerate(table):
             table_files.append(write_table(i, temp_dir, one_table))
             sample_ids = one_table.ids(axis='sample')
+            feature_id_list.extend(list(one_table.ids(axis='observation')))
         if metadata:
             metadata_tables = encode_metadata(
                 sample_ids, metadata, metadata_column)
@@ -144,15 +150,35 @@ def spiec_easi(
             )
 
         graph = read_graphml(str(network_file))
-        #following lines 148-155 were added to relabel nodes in the graph to match the original feature IDs
-        feature_ids = {node: attrs["Feature"]
-               for node, attrs in graph.nodes(data=True)}
-        if len(set(feature_ids.values())) != len(feature_ids):
-             raise ValueError(
-           "SpiecEasi returned duplicate Feature attributes. Feature IDs "
-            "must be unique across input tables and encoded metadata "
-            "to use them as network node IDs.")
-        graph = relabel_nodes(graph, feature_ids)
+
+       # Map R 1-based node numbers ('19', '72'...) or 'n0' to feature IDs
+        node_mapping = {}
+        for node in graph.nodes:
+            if str(node).isdigit():
+                idx = int(node) - 1  # Convert R 1-based index to Python 0-based index
+            elif str(node).startswith('n') and str(node)[1:].isdigit():
+                idx = int(node[1:])
+            else:
+                idx = None
+
+            if idx is not None and 0 <= idx < len(feature_id_list):
+                node_mapping[node] = feature_id_list[idx]
+            else:
+                node_mapping[node] = graph.nodes[node].get("Feature", node)
+
+        if len(set(node_mapping.values())) != len(node_mapping):
+            raise ValueError(
+                "SpiecEasi returned duplicate Feature attributes. Feature IDs "
+                "must be unique across input tables and encoded metadata "
+                "to use them as network node IDs."
+            )
+
+        graph = relabel_nodes(graph, node_mapping)
+
+        # Synchronize internal node attributes for QIIME 2 visualizer
+        for node_id in graph.nodes:
+            graph.nodes[node_id]["Feature"] = str(node_id)
+            graph.nodes[node_id]["label"] = str(node_id)
         if metadata:
             for node in graph.nodes:
                 graph.nodes[node]["mv"] = \
