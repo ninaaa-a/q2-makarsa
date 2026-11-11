@@ -23,8 +23,7 @@ option_list <- list(
   ),
   make_option(c("-l", "--lambda-min-ratio"),
     action = "store", default = NULL, type = "numeric",
-    help = "the scaling factor that determines the minimum sparsity/lambda
-    parameter"
+    help = "the scaling factor that determines the minimum sparsity/lambda parameter"
   ),
   make_option(c("-d", "--nlambda"),
     action = "store", default = NULL, type = "numeric",
@@ -52,36 +51,32 @@ option_list <- list(
   ),
   make_option("--sel-criterion",
     action = "store", default = "stars", type = "character",
-    help = " Specifying criterion/method for model selection, Accepts 'stars'
-	[default], 'bstars' (Bounded StARS)"
+    help = "Specifying criterion/method for model selection"
   ),
   make_option(c("-v", "--verbose"),
     action = "store_true", default = FALSE,
-    help = "Print extra output [default]"
+    help = "Print extra output"
   ),
   make_option("--not-lambda-log",
     action = "store_true", default = FALSE,
-    help = "lambda-log should values of lambda be distributed logarithmically
-	(TRUE) or linearly (FALSE) between lamba-min and lambda-max "
+    help = "lambda-log"
   ),
   make_option("--not-pulsar-select",
     action = "store_true", default = FALSE,
-    help = "pulsar select flag to perform model selection"
+    help = "pulsar select flag"
   ),
   make_option("--lambda-min",
     action = "store", default = NULL, type = "numeric",
-    help = "lower lambda limit if lambda-log is FALSE"
+    help = "lower lambda limit"
   ),
   make_option("--lambda-max",
     action = "store", default = NULL, type = "numeric",
-    help = "upper lambda limit if lambda-log is FALSE"
+    help = "upper lambda limit"
   )
 )
 
 opt <- parse_args(OptionParser(option_list = option_list))
 
-
-# assign each of the arguments to an appropriately named R variable
 inp.file <- opt$`input-file`
 out.file <- opt$`output-file`
 method <- opt$method
@@ -99,19 +94,12 @@ lambda.min <- opt$lambda_min
 lambda.max <- opt$lambda_max
 pulsar.select <- !(opt$`not-pulsar-select`)
 
-### VALIDATE ARGUMENTS ###
+### LOAD DATA ###
 
-#replaced below lines 105 - 107 with lines 108 - 110 to prevent loosing of node Feature ID
-#data <- lapply(strsplit(inp.file, ", ")[[1]], function(x) {
-#  t(as.matrix(biom_data(read_biom(x))))
-#})
 raw_bioms <- lapply(strsplit(inp.file, ", ")[[1]], read_biom)
 data <- lapply(raw_bioms, function(x) {
   t(as.matrix(biom_data(x)))
 })
-
-# Output files are to be filenames (not directories) and are to be
-# removed and replaced if already present.
 
 if (dir.exists(out.file)) {
   errQuit("Output filename ", out.file, " is a directory.")
@@ -139,12 +127,12 @@ se.out <- spiec.easi(
     ncores = ncores
   )
 )
-#deleted below line, added lines 143 - 150 to prevent loosing of node Feature ID
-#features <- list(Feature = unlist(lapply(data, colnames))) 
+
 feature_names <- unlist(lapply(data, colnames))
 if (is.null(feature_names)) {
   feature_names <- unlist(lapply(raw_bioms, function(x) rownames(biom_data(x))))
 }
+
 features <- list(
   name = as.character(feature_names),
   Feature = as.character(feature_names)
@@ -166,11 +154,9 @@ if (method == "mb") {
     vertex.attr = features
   )
 } else {
-  print("Weighted graph only available for mb and glasso method")
   network <- adj2igraph(getRefit(se.out), vertex.attr = features)
 }
 
-#added line 166 & 167 to prevent loosing of node Feature ID
 V(network)$name <- features$name
 V(network)$Feature <- features$Feature
 
