@@ -23,7 +23,8 @@ option_list <- list(
   ),
   make_option(c("-l", "--lambda-min-ratio"),
     action = "store", default = NULL, type = "numeric",
-    help = "the scaling factor that determines the minimum sparsity/lambda parameter"
+    help = "the scaling factor that determines the minimum sparsity/lambda
+    parameter"
   ),
   make_option(c("-d", "--nlambda"),
     action = "store", default = NULL, type = "numeric",
@@ -51,32 +52,36 @@ option_list <- list(
   ),
   make_option("--sel-criterion",
     action = "store", default = "stars", type = "character",
-    help = "Specifying criterion/method for model selection"
+    help = " Specifying criterion/method for model selection, Accepts 'stars'
+	[default], 'bstars' (Bounded StARS)"
   ),
   make_option(c("-v", "--verbose"),
     action = "store_true", default = FALSE,
-    help = "Print extra output"
+    help = "Print extra output [default]"
   ),
   make_option("--not-lambda-log",
     action = "store_true", default = FALSE,
-    help = "lambda-log"
+    help = "lambda-log should values of lambda be distributed logarithmically
+	(TRUE) or linearly (FALSE) between lamba-min and lambda-max "
   ),
   make_option("--not-pulsar-select",
     action = "store_true", default = FALSE,
-    help = "pulsar select flag"
+    help = "pulsar select flag to perform model selection"
   ),
   make_option("--lambda-min",
     action = "store", default = NULL, type = "numeric",
-    help = "lower lambda limit"
+    help = "lower lambda limit if lambda-log is FALSE"
   ),
   make_option("--lambda-max",
     action = "store", default = NULL, type = "numeric",
-    help = "upper lambda limit"
+    help = "upper lambda limit if lambda-log is FALSE"
   )
 )
 
 opt <- parse_args(OptionParser(option_list = option_list))
 
+
+# assign each of the arguments to an appropriately named R variable
 inp.file <- opt$`input-file`
 out.file <- opt$`output-file`
 method <- opt$method
@@ -94,20 +99,14 @@ lambda.min <- opt$lambda_min
 lambda.max <- opt$lambda_max
 pulsar.select <- !(opt$`not-pulsar-select`)
 
-### LOAD DATA ###
+### VALIDATE ARGUMENTS ###
 
-raw_bioms <- lapply(strsplit(inp.file, ", ")[[1]], read_biom)
-data <- lapply(raw_bioms, function(x) {
-  biom_matrix <- as.matrix(biom_data(x))
-  feature_ids <- rownames(biom_matrix)
-
-  # Transposition changes features from rows to columns. Reassigning the
-  # column names explicitly prevents R/SpiecEasi from replacing the original
-  # BIOM observation IDs with positional names.
-  result <- t(biom_matrix)
-  colnames(result) <- feature_ids
-  result
+data <- lapply(strsplit(inp.file, ", ")[[1]], function(x) {
+  t(as.matrix(biom_data(read_biom(x))))
 })
+
+# Output files are to be filenames (not directories) and are to be
+# removed and replaced if already present.
 
 if (dir.exists(out.file)) {
   errQuit("Output filename ", out.file, " is a directory.")
@@ -135,21 +134,17 @@ se.out <- spiec.easi(
     ncores = ncores
   )
 )
+#changed below lines
+# Extract feature names from input matrices
+feature_names <- unlist(lapply(data, colnames))
 
-# These are the original BIOM observation IDs, in the same order as the
-# columns supplied to SpiecEasi. They are the source of truth for graph nodes.
-feature_names <- unlist(lapply(data, colnames), use.names = FALSE)
-if (length(feature_names) == 0 || any(is.na(feature_names))) {
-  stop("Could not recover feature IDs from the input BIOM tables.")
-}
-if (anyDuplicated(feature_names)) {
-  stop("Feature IDs must be unique across all input BIOM tables.")
+# Fallback in case the input BIOM lacks feature names
+if (is.null(feature_names)) {
+  feature_names <- paste0("Feature_", seq_len(sum(sapply(data, ncol))))
 }
 
-features <- list(
-  name = as.character(feature_names),
-  Feature = as.character(feature_names)
-)
+# Pass BOTH 'Feature' (for q2-makarsa validation) and 'name' (for igraph display)
+features <- list(Feature = feature_names, name = feature_names)
 
 if (method == "mb") {
   bm <- symBeta(getOptBeta(se.out), mode = "maxabs")
@@ -167,12 +162,8 @@ if (method == "mb") {
     vertex.attr = features
   )
 } else {
+  print("Weighted graph only available for mb and glasso method")
   network <- adj2igraph(getRefit(se.out), vertex.attr = features)
 }
-
-# igraph may use internal node IDs when writing GraphML. Store the original
-# IDs as explicit attributes; Python uses Feature rather than those internals.
-V(network)$name <- as.character(feature_names)
-V(network)$Feature <- as.character(feature_names)
 
 write_graph(network, out.file, "graphml")
